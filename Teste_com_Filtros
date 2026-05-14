@@ -1,0 +1,53 @@
+import os
+import numpy as np
+import librosa
+import soundfile as sf
+from scipy.signal import butter, lfilter, iirnotch
+
+# 1. FILTRO PASSA-ALTA (Butterworth)
+# Alvo: Cortar o ruído massivo da betoneira abaixo de 300Hz
+def filtro_passa_alta(data, cutoff, sr, order=5):
+    nyq = 0.5 * sr
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    y = lfilter(b, a, data)
+    return y
+
+# 2. FILTRO REJEITA-FAIXA (Notch Filter)
+# Alvo: Eliminar a agulha isolada de ruído tonal em ~3500Hz
+def filtro_notch(data, freq_ruido, sr, q=30.0):
+    nyq = 0.5 * sr
+    freq_normalizada = freq_ruido / nyq
+    b, a = iirnotch(freq_normalizada, q)
+    y = lfilter(b, a, data)
+    return y
+
+def pipeline_filtragem_pds(arquivo_nome):
+    diretorio = os.path.dirname(os.path.abspath(__file__))
+    caminho_entrada = os.path.join(diretorio, arquivo_nome)
+    
+    # Carregar o áudio original
+    y, sr = librosa.load(caminho_entrada, sr=None)
+    print(f"Áudio carregado: {arquivo_nome} | Taxa de Amostragem: {sr}Hz")
+    
+    # Passo A: Aplicar Passa-Alta em 300Hz (Elimina Betoneira/Vento)
+    print("[Passo 1] Aplicando Filtro Butterworth Passa-Alta (300 Hz)...")
+    y_filtrado = filtro_passa_alta(y, cutoff=300, sr=sr, order=5)
+    
+    # Passo B: Aplicar Filtro Notch em 3500Hz (Elimina o Apito isolado)
+    print("[Passo 2] Aplicando Filtro Notch Rejeita-Faixa (3500 Hz)...")
+    y_final = filtro_notch(y_filtrado, freq_ruido=3500, sr=sr, q=35.0)
+    
+    # Passo C: Normalização de Ganho para restaurar volume
+    y_final_norm = librosa.util.normalize(y_final)
+    
+    # Salvar o novo arquivo filtrado por PDS clássico
+    nome_base = os.path.splitext(arquivo_nome)[0]
+    caminho_saida = os.path.join(diretorio, f"AUDIO_FILTRADO_PDS_{nome_base}.wav")
+    sf.write(caminho_saida, y_final_norm, sr)
+    print(f"✨ Concluído! Novo arquivo gerado: AUDIO_FILTRADO_PDS_{nome_base}.wav")
+
+if __name__ == "__main__":
+    # Altere para o nome do seu arquivo real na pasta
+    meu_arquivo = "WhatsApp Audio 2026-05-11 at 22.46.38 (online-audio-converter.com).wav"
+    pipeline_filtragem_pds(meu_arquivo)
